@@ -1,9 +1,9 @@
 // Service Worker: macht die App offline-fähig.
 // Bei jedem Update der App-Dateien VERSION erhöhen, damit das Handy die neue Version lädt.
-const VERSION = 'finanzen-v3';
+const VERSION = 'finanzen-v4';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable.png', './apple-touch-icon.png',
-  './lib/pdf.min.mjs', './lib/pdf.worker.min.mjs'];
+  './pdf.min.mjs', './pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

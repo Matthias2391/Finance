@@ -540,8 +540,8 @@ $('igo').onclick = async () => {
 let pdfjs = null;
 async function loadPdfJs() {
   if (pdfjs) return pdfjs;
-  pdfjs = await import('./lib/pdf.min.mjs');
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL('lib/pdf.worker.min.mjs', location.href).href;
+  pdfjs = await import('./pdf.min.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdf.worker.min.mjs', location.href).href;
   return pdfjs;
 }
 const AMT_RE = /([+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\s?\d+,\d{2})(\s?[+-](?!\d)|\s?\b[SH]\b)?/g;
