@@ -60,7 +60,7 @@ const strip = ({d, ...rest}) => rest;
 const hydrate = t => ({...t, d: new Date(t.date + 'T12:00')});
 
 // ============ Zustand ============
-let TX = [], START = {giro:0, mm:0, c24:0, tr:0}, dismissed = new Set(), lastBackup = null;
+let RULES = {}, MAPS = {}, TX = [], START = {giro:0, mm:0, c24:0, tr:0}, dismissed = new Set(), lastBackup = null;
 let selK = key(today()), filt = null, type = 'out', editing = null;
 
 async function saveTx(add, removeIds = []) {
@@ -159,7 +159,7 @@ function render() {
 
   // Hinweise
   if (!TX.length) {
-    $('hints').innerHTML = `<section class="glass card welcome"><b style="font-size:17px">Los geht's</b><p>Trage unter „Mehr“ deine Startsalden ein und erfasse deine erste Buchung. Zum Ausprobieren kannst du auch Beispieldaten laden.</p><div class="acts"><button class="btn pri" data-act="new">Erste Buchung</button><button class="btn" data-act="more">Startsalden</button><button class="btn" data-act="demo">Beispieldaten</button></div></section>`;
+    $('hints').innerHTML = `<section class="glass card welcome"><b style="font-size:17px">Los geht's</b><p>Trage unter „Mehr“ deine Startsalden ein und erfasse deine erste Buchung. Zum Ausprobieren kannst du auch Beispieldaten laden.</p><div class="acts"><button class="btn pri" data-act="new">Erste Buchung</button><button class="btn" data-act="import">CSV importieren</button><button class="btn" data-act="more">Startsalden</button><button class="btn" data-act="demo">Beispieldaten</button></div></section>`;
   } else {
     const H = hints(k, FX, MK);
     $('hints').innerHTML = H.length ? `<div class="sec"><h2>Hinweise</h2><span class="lbl">${H.length} neu</span></div>` + H.map((h,i) => `<div class="hint glass" style="--hc:${h.c};animation-delay:${i*.07}s"><div class="ic">${h.i}</div><p><b>${h.t}</b>${h.d}</p><button class="x" data-dis="${esc(h.id)}">Ok</button></div>`).join('') : '';
@@ -229,7 +229,8 @@ function setType(t, cat) {
 // Kategorie-Vorschlag anhand früherer Buchungen beim gleichen Empfänger
 $('fpay').addEventListener('change', () => {
   if (type === 'tr' || editing) return;
-  const p = $('fpay').value.trim().toLowerCase(), prev = [...TX].reverse().find(t => !t.tr && t.payee.toLowerCase() === p);
+  const p = $('fpay').value.trim().toLowerCase(); if (RULES[p] && IN_CATS.includes(RULES[p]) === (type === 'in')) { $('fcat').value = RULES[p]; return; }
+  const prev = [...TX].reverse().find(t => !t.tr && t.payee.toLowerCase() === p);
   if (prev && (type === 'in') === (prev.amt > 0)) { $('fcat').value = prev.cat; $('facc').value = prev.acc; }
 });
 function openForm(t) {
@@ -269,8 +270,9 @@ $('form').onsubmit = async e => {
            {id:uid(), date, acc:to, payee:label, cat:'Umbuchung', amt, tr:true, g}];
   } else {
     if (!payee) { toast(type === 'in' ? 'Bitte angeben, von wem' : 'Bitte einen Empfänger angeben'); $('fpay').focus(); return; }
-    add = [{id:uid(), date, acc, payee, cat:$('fcat').value, amt: type === 'in' ? amt : -amt, tr:false}];
+    add = [{id:uid(), date, acc, payee, cat:$('fcat').value, amt: type === 'in' ? amt : -amt, tr:false, ...(editing?.memo ? {memo:editing.memo} : {})}];
   }
+  if (editing && !editing.tr && type !== 'tr' && editing.cat !== $('fcat').value) { RULES[payee.toLowerCase()] = $('fcat').value; DB.set('rules', RULES); }
   try {
     await saveTx(add, editing ? oldIds(editing) : []);
     selK = date.slice(0, 7); sheet.classList.remove('open');
@@ -339,6 +341,188 @@ $('wipe').onclick = async () => {
 };
 $('demo').onclick = () => loadDemo();
 
+// ============ CSV-Import ============
+const isheet = $('impsheet');
+function closeAll() { [sheet, more, isheet].forEach(x => x.classList.remove('open')); editing = null; }
+const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
+function decode(buf) { try { return new TextDecoder('utf-8', {fatal:true}).decode(buf).replace(/^﻿/, ''); } catch { return new TextDecoder('windows-1252').decode(buf); } }
+function detectDelim(text) {
+  const head = text.split(/\r?\n/).slice(0, 20).join('\n');
+  return [';', ',', '\t', '|'].map(d => [d, head.split(d).length]).sort((a,b) => b[1] - a[1])[0][0];
+}
+function parseCSV(text, d) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === d) { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i+1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += c;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x));
+}
+function num(s) {
+  s = String(s ?? '').replace(/EUR|€|\s| /gi, '').replace(/−/g, '-'); if (!s) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (s.endsWith('-')) { neg = true; s = s.slice(0, -1); }
+  if (s.startsWith('+')) s = s.slice(1);
+  const lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+  s = lc > ld ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return NaN;
+  const v = parseFloat(s); return neg ? -v : v;
+}
+function pdate(s) {
+  s = (s || '').trim(); let m, y, mo, d;
+  if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})/))) { d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000; }
+  else if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { y = +m[3]; mo = +m[1]; d = +m[2]; }
+  else return null;
+  const dt = new Date(y, mo - 1, d, 12);
+  return dt.getMonth() === mo - 1 && dt.getDate() === d ? iso(dt) : null;
+}
+const FIELDS = [['date','Datum'],['amount','Betrag'],['debit','Soll / Ausgang'],['credit','Haben / Eingang'],['payee','Empfänger / Auftraggeber'],['purpose','Verwendungszweck']];
+const KW = {
+  date: [/^buchungs?tag$/i, /buchungsdatum/i, /^datum$/i, /^date$/i, /buchung/i, /datum|date/i, /valuta|wertstellung/i],
+  amount: [/^betrag/i, /^amount/i, /^umsatz/i, /betrag|amount/i],
+  debit: [/^soll\b|belastung|^ausgang/i], credit: [/^haben\b|gutschrift|^eingang/i],
+  payee: [/beg(ue|ü)nstigter|zahlungspflichtiger/i, /empf(ae|ä)nger|auftraggeber/i, /^name$/i, /h(ä|ae)ndler|merchant|gegenkonto.*name|partner/i, /beschreibung|description/i],
+  purpose: [/verwendungszweck/i, /buchungstext/i, /beschreibung|description|details|zweck|^info|referenz/i]
+};
+function autoMap(h) {
+  const m = {}, used = new Set();
+  for (const [k] of FIELDS) for (const re of KW[k]) { const i = h.findIndex((x, j) => !used.has(j) && re.test(x)); if (i >= 0) { m[k] = i; used.add(i); break; } }
+  if (m.amount !== undefined) { delete m.debit; delete m.credit; }
+  return m;
+}
+const BUILTIN = [
+  [/rewe|edeka|lidl|aldi|netto|penny|kaufland|norma|tegut|globus|nahkauf|bäcker|baecker/i, 'Lebensmittel'],
+  [/aral|shell|esso|\bjet\b|totalenergies|tankstelle|deutsche bahn|db vertrieb|db fernverkehr|bvg|mvg|hvv|\buber\b|bolt|flixbus|parkhaus|parken|easypark/i, 'Mobilität'],
+  [/netflix|spotify|disney|dazn|\bsky\b|apple\.com|icloud|youtube|prime video|audible|vodafone|telekom|\bo2\b|congstar|1&1|chatgpt|openai|anthropic/i, 'Abos'],
+  [/media ?markt|saturn|cyberport|notebooksbilliger|apple store/i, 'Elektronik'],
+  [/amazon|amzn|zalando|\botto\b|ebay|ikea|h&m|zara|paypal/i, 'Shopping'],
+  [/\bdm\b|dm-drogerie|rossmann|drogerie m(ü|ue)ller/i, 'Drogerie'],
+  [/miete|hausverwaltung|wohnungs|stadtwerke|strom|\bgas\b|rundfunk|ard zdf|nebenkosten/i, 'Wohnen'],
+  [/versicherung|\bhuk\b|allianz|\baxa\b|\bergo\b|devk|r\+v|signal iduna|krankenkasse/i, 'Versicherung'],
+  [/apotheke|arzt|zahnarzt|praxis|klinik|optiker/i, 'Gesundheit'],
+  [/lieferando|wolt|mcdonald|burger king|restaurant|pizzeria|trattoria|caf(é|e)\b|starbucks|\bkfc\b|subway|döner|doener|imbiss/i, 'Restaurants'],
+  [/fitx|mcfit|urban sports|fitness|\bgym\b|sportverein/i, 'Sport'],
+  [/booking\.com|airbnb|lufthansa|eurowings|ryanair|condor|hotel|expedia/i, 'Urlaub'],
+  [/kino|cinema|cinemaxx|eventim|steam|playstation|nintendo|xbox/i, 'Freizeit']];
+const IN_BUILTIN = [[/lohn|gehalt|bez(ü|ue)ge|salary|entgelt/i, 'Gehalt'], [/zins|interest/i, 'Zinsen']];
+const OWN = {giro:/sparkasse/i, mm:/miles ?(&|and|und) ?more|kreditkartenabrechnung|kreditkarte/i, c24:/\bc24\b/i, tr:/trade republic/i};
+const XFER = /umbuchung|übertrag|uebertrag|eigenes konto|eigene konten|sparplan|einzahlung trade/i;
+function categorize(payee, memo, amt) {
+  const p = payee.toLowerCase(), isIn = amt > 0, fits = c => c && IN_CATS.includes(c) === isIn;
+  if (fits(RULES[p])) return RULES[p];
+  const prev = [...TX].reverse().find(t => !t.tr && t.payee.toLowerCase() === p && (t.amt > 0) === isIn);
+  if (prev) return prev.cat;
+  const s = payee + ' ' + memo;
+  for (const [re, c] of (isIn ? IN_BUILTIN : BUILTIN)) if (re.test(s)) return c;
+  return isIn ? 'Sonstige Einnahme' : 'Sonstiges';
+}
+const dayDiff = (a, b) => Math.abs(new Date(a + 'T12:00') - new Date(b + 'T12:00')) / 864e5;
+const fp = (acc, date, amt, payee) => `${acc}|${date}|${amt.toFixed(2)}|${payee.toLowerCase().slice(0, 24)}`;
+const imp = {acc:'giro', header:[], rows:[], map:{}, inv:false, items:[], sig:''};
+
+function openImport() {
+  more.classList.remove('open');
+  $('iacc').innerHTML = accOpts(filt || imp.acc); $('istep').hidden = true; imp.items = [];
+  isheet.classList.add('open');
+}
+$('iacc').onchange = () => { imp.acc = $('iacc').value; if (imp.rows.length) { applySaved(); renderImport(); } };
+$('ifile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (/\.pdf$/i.test(f.name)) { toast('PDF-Import folgt. Bitte vorerst CSV nutzen'); return; }
+  try {
+    const text = decode(await f.arrayBuffer()), d = detectDelim(text), rows = parseCSV(text, d);
+    let hi = rows.slice(0, 40).findIndex(r => r.length >= 3 && r.some(x => /datum|date|buchung|tag/i.test(x)) && r.some(x => /betrag|amount|umsatz|soll|haben/i.test(x)));
+    if (hi < 0) hi = 0;
+    imp.header = rows[hi].map(clean); imp.rows = rows.slice(hi + 1).filter(r => r.length >= Math.min(3, imp.header.length));
+    imp.sig = imp.header.join('|').toLowerCase(); imp.acc = $('iacc').value;
+    if (!imp.rows.length) throw new Error('leer');
+    applySaved(); renderImport(); $('istep').hidden = false;
+  } catch (err) { console.error(err); toast('Datei konnte nicht gelesen werden'); }
+};
+function applySaved() {
+  const saved = MAPS[imp.acc];
+  if (saved && saved.sig === imp.sig) { imp.map = {...saved.map}; imp.inv = !!saved.inv; return; }
+  imp.map = autoMap(imp.header); imp.inv = false;
+  const amts = buildRaw().map(x => x.amt); // Kreditkarten-Exporte führen Ausgaben oft positiv
+  imp.inv = amts.length >= 5 && amts.filter(a => a > 0).length / amts.length > .8;
+}
+function buildRaw() {
+  const {map, inv, acc} = imp, out = [], g = (r, k) => map[k] !== undefined ? r[map[k]] : undefined;
+  for (const r of imp.rows) {
+    const date = pdate(g(r, 'date')); let amt;
+    if (map.amount !== undefined) amt = num(g(r, 'amount'));
+    else { const d = num(g(r, 'debit')), c = num(g(r, 'credit')); amt = isNaN(d) && isNaN(c) ? NaN : (isNaN(c) ? 0 : Math.abs(c)) - (isNaN(d) ? 0 : Math.abs(d)); }
+    if (!date || isNaN(amt) || amt === 0) continue;
+    if (inv) amt = -amt;
+    const memo = clean(g(r, 'purpose')), payee = clean(g(r, 'payee')) || memo.slice(0, 40) || 'Unbekannt';
+    out.push({date, amt:r2(amt), payee, memo, acc});
+  }
+  return out;
+}
+function analyse() {
+  const raw = buildRaw(), counts = {};
+  TX.forEach(t => { const k = fp(t.acc, t.date, t.amt, t.payee); counts[k] = (counts[k] || 0) + 1; });
+  const used = new Set(), keep = {};
+  imp.items.forEach(x => { if (x.catSet) keep[x.payee.toLowerCase() + (x.amt > 0)] = x.cat; });
+  imp.items = raw.map(x => {
+    const k = fp(x.acc, x.date, x.amt, x.payee);
+    if (counts[k]) { counts[k]--; return {...x, dup:true}; }
+    const text = x.payee + ' ' + x.memo;
+    const kw = XFER.test(text) || Object.entries(OWN).some(([id, re]) => id !== x.acc && re.test(text));
+    const cp = TX.find(t => !used.has(t.id) && t.acc !== x.acc && Math.abs(t.amt + x.amt) < .005 && dayDiff(t.date, x.date) <= 4 && (t.tr ? t.lone : kw));
+    if (cp) used.add(cp.id);
+    if (kw || cp) return {...x, tr:true, pair: cp ? cp.id : null};
+    const kc = keep[x.payee.toLowerCase() + (x.amt > 0)];
+    return {...x, cat: kc || categorize(x.payee, x.memo, x.amt), catSet: !!kc};
+  });
+}
+function renderImport() {
+  $('imap').innerHTML = FIELDS.map(([k, l]) => `<div><label for="m_${k}">${l}</label><select id="m_${k}" data-map="${k}"><option value="">–</option>${imp.header.map((h, i) => `<option value="${i}"${imp.map[k] === i ? ' selected' : ''}>${esc(h || 'Spalte ' + (i + 1))}</option>`).join('')}</select></div>`).join('');
+  $('iinv').checked = imp.inv;
+  analyse();
+  const nw = imp.items.filter(x => !x.dup), dup = imp.items.length - nw.length, trn = nw.filter(x => x.tr).length;
+  $('isum').textContent = imp.items.length ? `${nw.length} neu · ${trn} Umbuchungen · ${dup} schon vorhanden` : 'Keine Buchungen erkannt – bitte Spalten prüfen';
+  const outCats = OUT_CATS.map(c => [c, c]), inCats = IN_CATS.map(c => [c, c]);
+  $('ilist').innerHTML = nw.slice(0, 150).map((x, i) => `<div class="row irow"><div class="t"><b>${esc(x.payee)}</b><small>${new Date(x.date + 'T12:00').toLocaleDateString('de-DE')} · <span class="${x.amt > 0 ? 'pos' : ''}">${eur.format(x.amt)}</span></small></div>${x.tr ? `<span class="chip">Umbuchung</span>` : `<select data-icat="${imp.items.indexOf(x)}" aria-label="Kategorie">${opt(x.amt > 0 ? inCats : outCats, x.cat)}</select>`}</div>`).join('')
+    + (nw.length > 150 ? `<div class="empty">… und ${nw.length - 150} weitere</div>` : '');
+  $('igo').disabled = !nw.length; $('igo').textContent = nw.length ? `${nw.length} Buchungen importieren` : 'Nichts zu importieren';
+}
+$('imap').addEventListener('change', e => { const s = e.target.closest('[data-map]'); if (!s) return; if (s.value === '') delete imp.map[s.dataset.map]; else imp.map[s.dataset.map] = +s.value; renderImport(); });
+$('iinv').onchange = () => { imp.inv = $('iinv').checked; renderImport(); };
+$('ilist').addEventListener('change', e => {
+  const s = e.target.closest('[data-icat]'); if (!s) return;
+  const it = imp.items[+s.dataset.icat], p = it.payee.toLowerCase(), isIn = it.amt > 0;
+  imp.items.forEach(x => { if (!x.dup && !x.tr && x.payee.toLowerCase() === p && (x.amt > 0) === isIn) { x.cat = s.value; x.catSet = true; } });
+  RULES[p] = s.value; renderImport();
+});
+$('igo').onclick = async () => {
+  const nw = imp.items.filter(x => !x.dup); if (!nw.length) return;
+  const add = [], upd = [];
+  for (const x of nw) {
+    const t = {id:uid(), date:x.date, acc:x.acc, payee:x.payee, cat:x.tr ? 'Umbuchung' : x.cat, amt:x.amt, tr:!!x.tr, ...(x.memo ? {memo:x.memo} : {})};
+    if (x.tr) {
+      const cp = x.pair && TX.find(y => y.id === x.pair);
+      if (cp) { t.g = cp.g && cp.lone ? cp.g : uid(); upd.push({...strip(cp), tr:true, cat:'Umbuchung', g:t.g, lone:false}); }
+      else { t.g = uid(); t.lone = true; }
+    }
+    add.push(t);
+  }
+  try {
+    await saveTx([...add, ...upd], upd.map(u => u.id));
+    MAPS[imp.acc] = {sig:imp.sig, map:imp.map, inv:imp.inv}; await DB.set('maps', MAPS); await DB.set('rules', RULES);
+    selK = add.map(t => t.date).sort().pop().slice(0, 7);
+    imp.rows = []; imp.items = []; isheet.classList.remove('open'); render();
+    toast(`${add.length} Buchungen importiert`);
+  } catch (err) { console.error(err); toast('Import fehlgeschlagen'); }
+};
+
 // ============ Beispieldaten ============
 async function loadDemo() {
   if (TX.length) { toast('Nur bei leerer App möglich'); return; }
@@ -381,11 +565,11 @@ $('next').onclick = () => { const MK = monthKeys(), i = MK.indexOf(selK); if (i 
 $('chip').onclick = () => { filt = null; render(); };
 document.addEventListener('click', async e => {
   const t = e.target;
-  if (t.closest('[data-close]') || t === sheet || t === more) { sheet.classList.remove('open'); more.classList.remove('open'); editing = null; return; }
+  if (t.closest('[data-close]') || t === sheet || t === more || t === isheet) { closeAll(); return; }
   const a = t.closest('[data-acc]'); if (a) { filt = filt === a.dataset.acc ? null : a.dataset.acc; render(); if (filt) toast('Gefiltert: ' + AC[filt].name); return; }
   const d = t.closest('[data-dis]'); if (d) { dismissed.add(d.dataset.dis); await DB.set('dismissed', [...dismissed]); render(); return; }
   const r = t.closest('[data-tx]'); if (r) { const x = TX.find(y => y.id === r.dataset.tx); if (x) openForm(x); return; }
-  const act = t.closest('[data-act]'); if (act) { const v = act.dataset.act; if (v === 'new') openForm(); else if (v === 'more') openMore(); else if (v === 'demo') loadDemo(); return; }
+  const act = t.closest('[data-act]'); if (act) { const v = act.dataset.act; if (v === 'new') openForm(); else if (v === 'import') openImport(); else if (v === 'more') openMore(); else if (v === 'demo') loadDemo(); return; }
   const g = t.closest('[data-go]'); if (g) {
     const v = g.dataset.go;
     if (v === 'more') openMore();
@@ -393,7 +577,7 @@ document.addEventListener('click', async e => {
     else $(v).scrollIntoView({behavior: RM ? 'auto' : 'smooth', block:'start'});
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { sheet.classList.remove('open'); more.classList.remove('open'); editing = null; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
 
 // ============ Start ============
 (async () => {
@@ -403,6 +587,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { sheet.clas
     START = {...START, ...((await DB.get('start')) || {})};
     dismissed = new Set((await DB.get('dismissed')) || []);
     lastBackup = (await DB.get('lastBackup')) || null;
+    RULES = (await DB.get('rules')) || {}; MAPS = (await DB.get('maps')) || {};
   } catch (err) { console.error(err); toast('Speicher nicht verfügbar – Daten werden nicht gesichert'); }
   render();
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});

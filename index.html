@@ -143,6 +143,12 @@ input,select{width:100%;font:500 16px Manrope,sans-serif;color:var(--ink);backgr
 .sheet.open .panel{transform:none}
 .h3{font-size:13px;font-weight:800;color:var(--mut);margin:18px 2px 4px}
 [hidden]{display:none!important}
+.chk{display:flex;gap:10px;align-items:center;font-size:14px;font-weight:600;margin:12px 2px 0;color:var(--ink)}
+.chk input{width:22px;height:22px;min-height:0;margin:0;flex:none}
+.irow{cursor:default}
+.irow select{max-width:136px;padding:6px 8px;min-height:36px;font-size:14px;margin:0}
+.hintline{font-size:13px;color:var(--mut);margin:10px 2px 0}
+.filebtn{display:grid;place-items:center;margin-top:4px;min-height:46px;color:#fff;font-size:16px}
 </style>
 </head>
 <body>
@@ -241,10 +247,29 @@ input,select{width:100%;font:500 16px Manrope,sans-serif;color:var(--ink);backgr
     <div class="set" id="impok" hidden><div id="impinfo"></div><button class="btn dan arm" id="impgo">Ersetzen</button></div>
     <div class="set"><div>Speicherschutz<small id="persist"></small></div></div>
     <div class="h3">Daten</div>
-    <div class="set"><div>Import aus CSV/PDF<small>Kommt in Phase 3</small></div></div>
+    <div class="set"><div>Kontoauszug importieren<small>CSV aus der Banking-App · PDF folgt</small></div><button class="btn pri" data-act="import">Import</button></div>
     <div class="set" id="demorow"><div>Beispieldaten laden<small>Zum Ausprobieren, nur bei leerer App</small></div><button class="btn" id="demo">Laden</button></div>
     <div class="set"><div>Alle Daten löschen<small>Kann nicht rückgängig gemacht werden</small></div><button class="btn dan" id="wipe">Löschen</button></div>
-    <p class="note">Version 1.0 · Phase 2</p>
+    <p class="note">Version 1.1 · Phase 3</p>
+  </div>
+</div>
+<!-- CSV-Import -->
+<div class="sheet" id="impsheet">
+  <div class="panel glass">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:18px">Kontoauszug importieren</b><button type="button" class="ib" data-close aria-label="Schließen">✕</button></div>
+    <div class="fg" style="margin-top:12px">
+      <div><label for="iacc">Konto</label><select id="iacc"></select></div>
+      <div><label>Datei</label><label class="btn pri filebtn">CSV wählen<input type="file" id="ifile" accept=".csv,.txt,text/csv,text/plain" hidden></label></div>
+    </div>
+    <p class="hintline">Exportiere in der Banking-App die Umsätze als CSV. Doppelte Buchungen werden automatisch übersprungen.</p>
+    <div id="istep" hidden>
+      <div class="h3">Erkannte Spalten</div>
+      <div class="fg" id="imap"></div>
+      <label class="chk"><input type="checkbox" id="iinv">Ausgaben stehen als positive Beträge in der Datei</label>
+      <div class="h3" id="isum"></div>
+      <div id="ilist"></div>
+      <button class="save" id="igo">Importieren</button>
+    </div>
   </div>
 </div>
 <div class="toast glass" id="toast" role="status"></div>

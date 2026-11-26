@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline-fähig.
 // Bei jedem Update der App-Dateien VERSION erhöhen, damit das Handy die neue Version lädt.
-const VERSION = 'finanzen-v1';
+const VERSION = 'finanzen-v2';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable.png', './apple-touch-icon.png'];
 
