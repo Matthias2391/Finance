@@ -424,18 +424,20 @@ function categorize(payee, memo, amt) {
   return isIn ? 'Sonstige Einnahme' : 'Sonstiges';
 }
 const dayDiff = (a, b) => Math.abs(new Date(a + 'T12:00') - new Date(b + 'T12:00')) / 864e5;
-const fp = (acc, date, amt, payee) => `${acc}|${date}|${amt.toFixed(2)}|${payee.toLowerCase().slice(0, 24)}`;
-const imp = {acc:'giro', header:[], rows:[], map:{}, inv:false, items:[], sig:''};
+const fp = (acc, date, amt) => `${acc}|${date}|${amt.toFixed(2)}`;
+const imp = {acc:'giro', mode:'csv', header:[], rows:[], raw:[], flip:new Set(), map:{}, inv:false, items:[], sig:''};
 
 function openImport() {
   more.classList.remove('open');
   $('iacc').innerHTML = accOpts(filt || imp.acc); $('istep').hidden = true; imp.items = [];
   isheet.classList.add('open');
 }
-$('iacc').onchange = () => { imp.acc = $('iacc').value; if (imp.rows.length) { applySaved(); renderImport(); } };
+$('iacc').onchange = () => { imp.acc = $('iacc').value; if (imp.mode === 'csv' && imp.rows.length) { applySaved(); renderImport(); } else if (imp.mode === 'pdf' && imp.raw.length) renderImport(); };
 $('ifile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  if (/\.pdf$/i.test(f.name)) { toast('PDF-Import folgt. Bitte vorerst CSV nutzen'); return; }
+  imp.acc = $('iacc').value;
+  if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') { try { await importPdf(f); } catch (err) { console.error(err); toast('PDF konnte nicht gelesen werden'); } return; }
+  imp.mode = 'csv'; imp.pdfLines = null;
   try {
     const text = decode(await f.arrayBuffer()), d = detectDelim(text), rows = parseCSV(text, d);
     let hi = rows.slice(0, 40).findIndex(r => r.length >= 3 && r.some(x => /datum|date|buchung|tag/i.test(x)) && r.some(x => /betrag|amount|umsatz|soll|haben/i.test(x)));
@@ -454,6 +456,7 @@ function applySaved() {
   imp.inv = amts.length >= 5 && amts.filter(a => a > 0).length / amts.length > .8;
 }
 function buildRaw() {
+  if (imp.mode === 'pdf') return imp.raw.map((x, ri) => ({date:x.date, amt:r2(x.amt * (imp.inv ? -1 : 1) * (imp.flip.has(ri) ? -1 : 1)), payee:x.payee, memo:x.memo, acc:imp.acc, ri, sure:x.sure}));
   const {map, inv, acc} = imp, out = [], g = (r, k) => map[k] !== undefined ? r[map[k]] : undefined;
   for (const r of imp.rows) {
     const date = pdate(g(r, 'date')); let amt;
@@ -468,14 +471,14 @@ function buildRaw() {
 }
 function analyse() {
   const raw = buildRaw(), counts = {};
-  TX.forEach(t => { const k = fp(t.acc, t.date, t.amt, t.payee); counts[k] = (counts[k] || 0) + 1; });
+  TX.forEach(t => { const k = fp(t.acc, t.date, t.amt); counts[k] = (counts[k] || 0) + 1; });
   const used = new Set(), keep = {};
   imp.items.forEach(x => { if (x.catSet) keep[x.payee.toLowerCase() + (x.amt > 0)] = x.cat; });
   imp.items = raw.map(x => {
-    const k = fp(x.acc, x.date, x.amt, x.payee);
+    const k = fp(x.acc, x.date, x.amt);
     if (counts[k]) { counts[k]--; return {...x, dup:true}; }
     const text = x.payee + ' ' + x.memo;
-    const kw = XFER.test(text) || Object.entries(OWN).some(([id, re]) => id !== x.acc && re.test(text));
+    const kw = XFER.test(text) || Object.entries(OWN).some(([id, re]) => id !== x.acc && re.test(text)) || (x.acc === 'tr' && x.amt < 0 && /handel|\bkauf\b|sparplan|wertpapier|order/i.test(text));
     const cp = TX.find(t => !used.has(t.id) && t.acc !== x.acc && Math.abs(t.amt + x.amt) < .005 && dayDiff(t.date, x.date) <= 4 && (t.tr ? t.lone : kw));
     if (cp) used.add(cp.id);
     if (kw || cp) return {...x, tr:true, pair: cp ? cp.id : null};
@@ -484,13 +487,23 @@ function analyse() {
   });
 }
 function renderImport() {
+  const isPdf = imp.mode === 'pdf';
+  $('icsv').hidden = isPdf; $('ipdf').hidden = !isPdf; $('idiagtxt').hidden = true;
   $('imap').innerHTML = FIELDS.map(([k, l]) => `<div><label for="m_${k}">${l}</label><select id="m_${k}" data-map="${k}"><option value="">–</option>${imp.header.map((h, i) => `<option value="${i}"${imp.map[k] === i ? ' selected' : ''}>${esc(h || 'Spalte ' + (i + 1))}</option>`).join('')}</select></div>`).join('');
   $('iinv').checked = imp.inv;
   analyse();
   const nw = imp.items.filter(x => !x.dup), dup = imp.items.length - nw.length, trn = nw.filter(x => x.tr).length;
-  $('isum').textContent = imp.items.length ? `${nw.length} neu · ${trn} Umbuchungen · ${dup} schon vorhanden` : 'Keine Buchungen erkannt – bitte Spalten prüfen';
+  if (isPdf) {
+    const {opening, closing} = imp.bal, sum = r2(imp.items.reduce((s, x) => s + x.amt, 0)), unsure = imp.items.filter(x => !x.sure).length;
+    let msg = '';
+    if (opening !== null && closing !== null) { const diff = r2(closing - opening - sum); msg = Math.abs(diff) < .01 ? `✓ Kontostand-Probe passt: ${eur.format(opening)} → ${eur.format(closing)}` : `⚠ Abweichung von ${eur.format(diff)} zur Kontostand-Probe. Tippe auf einen Betrag, um sein Vorzeichen zu ändern.`; }
+    else msg = 'Kein Anfangs-/Endsaldo gefunden – bitte Beträge kurz prüfen.';
+    if (unsure) msg += ` ${unsure} Vorzeichen geschätzt (markiert).`;
+    $('icheck').textContent = msg;
+  }
+  $('isum').textContent = imp.items.length ? `${nw.length} neu · ${trn} Umbuchungen · ${dup} schon vorhanden` : isPdf ? 'Keine Buchungen erkannt – nutze „Struktur anonym kopieren“ und schick mir den Text' : 'Keine Buchungen erkannt – bitte Spalten prüfen';
   const outCats = OUT_CATS.map(c => [c, c]), inCats = IN_CATS.map(c => [c, c]);
-  $('ilist').innerHTML = nw.slice(0, 150).map((x, i) => `<div class="row irow"><div class="t"><b>${esc(x.payee)}</b><small>${new Date(x.date + 'T12:00').toLocaleDateString('de-DE')} · <span class="${x.amt > 0 ? 'pos' : ''}">${eur.format(x.amt)}</span></small></div>${x.tr ? `<span class="chip">Umbuchung</span>` : `<select data-icat="${imp.items.indexOf(x)}" aria-label="Kategorie">${opt(x.amt > 0 ? inCats : outCats, x.cat)}</select>`}</div>`).join('')
+  $('ilist').innerHTML = nw.slice(0, 150).map((x, i) => `<div class="row irow"><div class="t"><b>${esc(x.payee)}</b><small>${new Date(x.date + 'T12:00').toLocaleDateString('de-DE')} · ${isPdf ? `<button type="button" class="chip" data-flip="${x.ri}" style="${x.sure ? '' : 'box-shadow:0 0 0 2px #e0a87a;'}padding:2px 8px" aria-label="Vorzeichen ändern"><span class="${x.amt > 0 ? 'pos' : ''}">${eur.format(x.amt)}</span> ±</button>` : `<span class="${x.amt > 0 ? 'pos' : ''}">${eur.format(x.amt)}</span>`}</small></div>${x.tr ? `<span class="chip">Umbuchung</span>` : `<select data-icat="${imp.items.indexOf(x)}" aria-label="Kategorie">${opt(x.amt > 0 ? inCats : outCats, x.cat)}</select>`}</div>`).join('')
     + (nw.length > 150 ? `<div class="empty">… und ${nw.length - 150} weitere</div>` : '');
   $('igo').disabled = !nw.length; $('igo').textContent = nw.length ? `${nw.length} Buchungen importieren` : 'Nichts zu importieren';
 }
@@ -516,12 +529,151 @@ $('igo').onclick = async () => {
   }
   try {
     await saveTx([...add, ...upd], upd.map(u => u.id));
-    MAPS[imp.acc] = {sig:imp.sig, map:imp.map, inv:imp.inv}; await DB.set('maps', MAPS); await DB.set('rules', RULES);
+    if (imp.mode === 'csv') { MAPS[imp.acc] = {sig:imp.sig, map:imp.map, inv:imp.inv}; await DB.set('maps', MAPS); } await DB.set('rules', RULES);
     selK = add.map(t => t.date).sort().pop().slice(0, 7);
-    imp.rows = []; imp.items = []; isheet.classList.remove('open'); render();
+    imp.rows = []; imp.raw = []; imp.pdfLines = null; imp.items = []; isheet.classList.remove('open'); render();
     toast(`${add.length} Buchungen importiert`);
   } catch (err) { console.error(err); toast('Import fehlgeschlagen'); }
 };
+
+// ============ PDF-Import (läuft komplett lokal auf dem Gerät) ============
+let pdfjs = null;
+async function loadPdfJs() {
+  if (pdfjs) return pdfjs;
+  pdfjs = await import('./lib/pdf.min.mjs');
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL('lib/pdf.worker.min.mjs', location.href).href;
+  return pdfjs;
+}
+const AMT_RE = /([+-]?\s?\d{1,3}(?:\.\d{3})*,\d{2}|[+-]?\s?\d+,\d{2})(\s?[+-](?!\d)|\s?\b[SH]\b)?/g;
+const MON = {jan:1, feb:2, mär:3, mrz:3, mar:3, apr:4, mai:5, jun:6, jul:7, aug:8, sep:9, okt:10, nov:11, dez:12};
+const SKIP = /kontostand|saldo|übertrag|uebertrag|zwischensumme|summe der|^seite\b|blatt\s*\d|rechnungsabschluss|kreditlinie|verfügungsrahmen/i;
+const OPEN_RE = /(alter|letzter|anfangs|vorheriger)\s*(kontostand|saldo)|saldovortrag|anfangssaldo/i;
+const CLOSE_RE = /(neuer|aktueller|end)\s*(kontostand|saldo)|endsaldo/i;
+const BTYPE = /^(sepa[- ]?)?(basis[- ]?)?(lastschrift|überweisungsgutschrift|gutschrift|echtzeitüberweisung|echtzeit-überweisung|überweisung|ueberweisung|dauerauftrag|kartenzahlung girocard|kartenzahlung|kartenumsatz|girocard|einzug|abbuchung|bargeldauszahlung|auszahlung|einzahlung|zinsen|entgelt|gebühr|gebuehr|lohn\/gehalt|gehalt\/rente|überweisungsgutschrift|retoure|zahlung)\b[\s:.-]*/i;
+const POS_WORDS = /gutschrift|eingang|lohn|gehalt|rente|zinsen|erstattung|einzahlung|retoure|rückzahlung|rueckzahlung/i;
+const IN_HEAD = /^(haben|gutschrift|eingang|zahlungseingang|einnahmen?)$/i, OUT_HEAD = /^(soll|belastung|lastschrift|ausgang|zahlungsausgang|ausgaben?)$/i, BAL_HEAD = /^(saldo|kontostand)$/i;
+
+async function readPdfLines(file) {
+  const lib = await loadPdfJs();
+  const doc = await lib.getDocument({data: new Uint8Array(await file.arrayBuffer()), isEvalSupported:false}).promise;
+  const lines = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const tc = await (await doc.getPage(p)).getTextContent();
+    const items = tc.items.filter(i => i.str && i.str.trim()).map(i => ({s:i.str, x:i.transform[4], y:i.transform[5], w:i.width || 0}));
+    items.sort((a,b) => b.y - a.y || a.x - b.x);
+    const pageLines = [];
+    for (const it of items) {
+      const ln = pageLines.find(l => Math.abs(l.y - it.y) < 3);
+      if (ln) ln.items.push(it); else pageLines.push({y:it.y, page:p, items:[it]});
+    }
+    pageLines.forEach(l => { l.items.sort((a,b) => a.x - b.x); l.text = clean(l.items.map(i => i.s).join(' ')); });
+    lines.push(...pageLines.sort((a,b) => b.y - a.y));
+  }
+  return lines;
+}
+function amountsOf(line) {
+  const out = [];
+  for (const it of line.items) {
+    AMT_RE.lastIndex = 0; let m;
+    while ((m = AMT_RE.exec(it.s))) {
+      const raw = m[1].replace(/\s/g, ''), suf = (m[2] || '').trim();
+      const before = it.s.slice(0, m.index);
+      if (/\d[.,]?$/.test(before)) continue;
+      let sign = raw.startsWith('-') ? -1 : raw.startsWith('+') ? 1 : 0;
+      if (suf === '-' || suf === 'S') sign = -1; else if (suf === '+' || suf === 'H') sign = 1;
+      const len = it.s.length || 1, cx = it.x + it.w * ((m.index + m[0].length / 2) / len);
+      out.push({v:Math.abs(num(raw)), sign, cx, at: line.text.indexOf(m[1].trim())});
+    }
+  }
+  return out.filter(a => a.v > 0 || a.v === 0);
+}
+function lineDate(text, endYear) {
+  let m = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?(?=\s|$)/);
+  if (m) {
+    let y = m[3] ? +m[3] : null; if (y && y < 100) y += 2000;
+    return {d:+m[1], mo:+m[2], y, len:m[0].length};
+  }
+  m = text.match(/^(\d{1,2})\.?\s+([A-Za-zäÄ]{3})[a-zä]*\.?\s+(\d{4})?/);
+  if (m && MON[m[2].toLowerCase()]) return {d:+m[1], mo:MON[m[2].toLowerCase()], y:m[3] ? +m[3] : null, len:m[0].length};
+  return null;
+}
+function findHeader(lines) {
+  for (const l of lines) {
+    const cols = [];
+    l.items.forEach(it => it.s.split(/\s{2,}/).forEach(w => { w = w.trim(); const cx = it.x + it.w / 2;
+      if (IN_HEAD.test(w)) cols.push({k:'in', cx}); else if (OUT_HEAD.test(w)) cols.push({k:'out', cx}); else if (BAL_HEAD.test(w)) cols.push({k:'bal', cx}); }));
+    if (cols.some(c => c.k !== 'bal') && cols.length >= 2) return cols;
+  }
+  return null;
+}
+function parsePdfLines(lines) {
+  const full = lines.map(l => l.text).join('\n').match(/\b\d{1,2}\.\d{1,2}\.(\d{4})\b/g) || [];
+  const fullDates = full.map(s => pdate(s)).filter(Boolean).sort();
+  const endIso = fullDates[fullDates.length - 1] || iso(today()), endD = new Date(endIso + 'T12:00');
+  const head = findHeader(lines), out = [];
+  let cur = null, opening = null, closing = null;
+  const finish = () => {
+    if (!cur) return;
+    if (!cur.payee) { cur.payee = cur.extra.shift() || 'Unbekannt'; }
+    cur.memo = clean([cur.btype, ...cur.extra].join(' ')).slice(0, 200);
+    cur.payee = cur.payee.slice(0, 60); delete cur.extra; delete cur.btype; out.push(cur); cur = null;
+  };
+  for (const l of lines) {
+    const t = l.text, A = amountsOf(l);
+    if (A.length && (OPEN_RE.test(t) || CLOSE_RE.test(t) || /(kontostand|saldo)\s+(am|per|zum)\b/i.test(t))) {
+      const a = A[A.length-1], v = a.v * (a.sign || 1);
+      if (CLOSE_RE.test(t) || (opening !== null && !OPEN_RE.test(t))) closing = v; else if (opening === null) opening = v;
+    }
+    const dt = lineDate(t);
+    if (dt && A.length && !SKIP.test(t)) {
+      finish();
+      let y = dt.y || endD.getFullYear(), dd = new Date(y, dt.mo - 1, dt.d, 12);
+      if (!dt.y && dd - endD > 7 * 864e5) dd = new Date(y - 1, dt.mo - 1, dt.d, 12);
+      if (dd.getMonth() !== dt.mo - 1) continue;
+      let cand = A, kind = null;
+      if (head) {
+        const cls = A.map(a => ({...a, k: head.reduce((b, c) => Math.abs(c.cx - a.cx) < Math.abs(b.cx - a.cx) ? c : b).k}));
+        const tx = cls.filter(a => a.k !== 'bal'); if (tx.length) { cand = tx; kind = tx[0].k; }
+      } else if (A.length > 1) cand = [A[A.length - 2]];
+      const a = cand[0];
+      let desc = t.slice(dt.len, a.at > dt.len ? a.at : undefined).trim();
+      desc = desc.replace(/^\d{1,2}\.\d{1,2}\.(\d{2,4})?\s*/, '');
+      const bt = desc.match(BTYPE); const btype = bt ? bt[0].trim() : '';
+      if (bt) desc = desc.slice(bt[0].length);
+      let sign = a.sign, sure = true;
+      if (!sign && kind) sign = kind === 'in' ? 1 : -1;
+      if (!sign) { sign = POS_WORDS.test(btype + ' ' + desc) ? 1 : -1; sure = false; }
+      cur = {date: iso(dd), amt: r2(a.v * sign), payee: clean(desc), btype, extra: [], sure};
+    } else if (cur && !A.length && !SKIP.test(t) && !lineDate(t) && cur.extra.length < 4 && t.length < 120) {
+      cur.extra.push(t);
+    } else if (cur && (SKIP.test(t) || A.length)) finish();
+  }
+  finish();
+  return {rows: out, opening, closing};
+}
+// Anonymisierte Struktur: nur Layout, keine echten Werte
+const KEEP = /^(datum|buchungstag|buchung|valuta|wert|wertstellung|betrag|umsatz|soll|haben|eur|saldo|kontostand|alter|neuer|übertrag|lastschrift|gutschrift|überweisung|kartenzahlung|dauerauftrag|sepa|basislastschrift|zahlungseingang|zahlungsausgang|eingang|ausgang|typ|beschreibung|verwendungszweck|seite|von|bis|am|kontoauszug|umsätze|zinsen|gebühr|entgelt|belastung|einzahlung|auszahlung|summe)$/i;
+function anonymize(lines) {
+  return lines.slice(0, 120).map(l => `[p${l.page} y${Math.round(l.y)}] ` + l.items.map(it => `@${Math.round(it.x)} ` + it.s.split(/(\s+)/).map(w => KEEP.test(w.replace(/[:.]$/, '')) ? w : w.replace(/\d/g, '9').replace(/[A-ZÄÖÜ]/g, 'X').replace(/[a-zäöüß]/g, 'x')).join('')).join('  ')).join('\n');
+}
+async function importPdf(f) {
+  toast('PDF wird gelesen …');
+  const lines = await readPdfLines(f), res = parsePdfLines(lines);
+  imp.mode = 'pdf'; imp.pdfLines = lines; imp.raw = res.rows; imp.flip = new Set(); imp.bal = res;
+  imp.sig = 'pdf'; imp.inv = false; imp.header = []; imp.rows = [];
+  if (!lines.length) toast('In der PDF wurde kein Text gefunden (evtl. eingescannt)');
+  renderImport(); $('istep').hidden = false;
+}
+$('idiag').onclick = async () => {
+  if (!imp.pdfLines) return;
+  const txt = anonymize(imp.pdfLines);
+  try { await navigator.clipboard.writeText(txt); toast('Anonyme Struktur kopiert'); }
+  catch { $('idiagtxt').hidden = false; $('idiagtxt').value = txt; $('idiagtxt').select(); toast('Text markiert – bitte kopieren'); }
+};
+$('ilist').addEventListener('click', e => {
+  const b = e.target.closest('[data-flip]'); if (!b) return;
+  const i = +b.dataset.flip; imp.flip.has(i) ? imp.flip.delete(i) : imp.flip.add(i); renderImport();
+});
 
 // ============ Beispieldaten ============
 async function loadDemo() {

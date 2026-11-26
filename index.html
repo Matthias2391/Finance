@@ -247,10 +247,10 @@ input,select{width:100%;font:500 16px Manrope,sans-serif;color:var(--ink);backgr
     <div class="set" id="impok" hidden><div id="impinfo"></div><button class="btn dan arm" id="impgo">Ersetzen</button></div>
     <div class="set"><div>Speicherschutz<small id="persist"></small></div></div>
     <div class="h3">Daten</div>
-    <div class="set"><div>Kontoauszug importieren<small>CSV aus der Banking-App · PDF folgt</small></div><button class="btn pri" data-act="import">Import</button></div>
+    <div class="set"><div>Kontoauszug importieren<small>CSV oder PDF, wird nur lokal gelesen</small></div><button class="btn pri" data-act="import">Import</button></div>
     <div class="set" id="demorow"><div>Beispieldaten laden<small>Zum Ausprobieren, nur bei leerer App</small></div><button class="btn" id="demo">Laden</button></div>
     <div class="set"><div>Alle Daten löschen<small>Kann nicht rückgängig gemacht werden</small></div><button class="btn dan" id="wipe">Löschen</button></div>
-    <p class="note">Version 1.1 · Phase 3</p>
+    <p class="note">Version 1.2 · CSV- & PDF-Import</p>
   </div>
 </div>
 <!-- CSV-Import -->
@@ -259,13 +259,16 @@ input,select{width:100%;font:500 16px Manrope,sans-serif;color:var(--ink);backgr
     <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:18px">Kontoauszug importieren</b><button type="button" class="ib" data-close aria-label="Schließen">✕</button></div>
     <div class="fg" style="margin-top:12px">
       <div><label for="iacc">Konto</label><select id="iacc"></select></div>
-      <div><label>Datei</label><label class="btn pri filebtn">CSV wählen<input type="file" id="ifile" accept=".csv,.txt,text/csv,text/plain" hidden></label></div>
+      <div><label>Datei</label><label class="btn pri filebtn">CSV / PDF<input type="file" id="ifile" accept=".csv,.txt,.pdf,text/csv,text/plain,application/pdf" hidden></label></div>
     </div>
-    <p class="hintline">Exportiere in der Banking-App die Umsätze als CSV. Doppelte Buchungen werden automatisch übersprungen.</p>
+    <p class="hintline">CSV oder PDF-Kontoauszug wählen. Die Datei wird nur auf diesem Gerät gelesen und nicht gespeichert. Doppelte Buchungen werden übersprungen.</p>
     <div id="istep" hidden>
-      <div class="h3">Erkannte Spalten</div>
-      <div class="fg" id="imap"></div>
-      <label class="chk"><input type="checkbox" id="iinv">Ausgaben stehen als positive Beträge in der Datei</label>
+      <div id="icsv"><div class="h3">Erkannte Spalten</div>
+      <div class="fg" id="imap"></div></div>
+      <div id="ipdf" hidden><p class="hintline" id="icheck" style="color:var(--ink);font-weight:600"></p>
+        <div class="set"><div>Nicht richtig erkannt?<small>Kopiert nur das Layout, alle Zahlen und Namen werden unkenntlich</small></div><button type="button" class="btn" id="idiag">Anonym kopieren</button></div>
+        <textarea id="idiagtxt" hidden readonly style="width:100%;height:140px;font:12px monospace;border-radius:12px;border:1px solid rgba(31,36,51,.1);padding:8px"></textarea></div>
+      <label class="chk"><input type="checkbox" id="iinv">Alle Vorzeichen umkehren</label>
       <div class="h3" id="isum"></div>
       <div id="ilist"></div>
       <button class="save" id="igo">Importieren</button>

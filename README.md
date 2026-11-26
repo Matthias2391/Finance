@@ -1,4 +1,4 @@
-# Finanzen – PWA (Phase 3: CSV-Import)
+# Finanzen – PWA (CSV- & PDF-Import)
 
 Private Einnahmen-/Ausgaben-App für Sparkasse Giro, Miles & More, C24 und Trade Republic.
 Alle Daten liegen ausschließlich lokal auf dem Handy (IndexedDB). Kein Server, kein Konto.
