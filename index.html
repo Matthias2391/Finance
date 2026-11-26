@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f6fb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finanzen">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Finanzen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: ruhig, hell, präzise – eine private Finanz-App, kein Bank-Portal
+   IDEA: beschlagene Glasscheiben über einem sanften Pastell-Licht
+   PICTURE: Saldo-Karte + wischbare Kontokarten als Herzstück
+   COLOUR+TYPE: Off-White, Pastell-Blobs, gedeckte Kontofarben; Manrope
+   LAYOUT: Handy zuerst, eine Spalte, schwebende Glas-Navigation */
+:root{color-scheme:light;--bg:#f4f6fb;--ink:#1f2433;--mut:#6b7085;--pos:#3f9a73;--neg:#c25f69;--glass:rgba(255,255,255,.58);--line:rgba(255,255,255,.85);--sh:0 10px 34px rgba(70,80,130,.09)}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Manrope,system-ui,sans-serif;overflow-x:clip;-webkit-tap-highlight-color:transparent}
+.bgfx{position:fixed;inset:0;z-index:-1;overflow:hidden}
+.bgfx i{position:absolute;width:62vmax;height:62vmax;border-radius:50%;filter:blur(70px);opacity:.75;animation:drift 26s ease-in-out infinite alternate}
+.bgfx i:nth-child(1){background:#cfe0ff;top:-22vmax;left:-18vmax}
+.bgfx i:nth-child(2){background:#e7dcff;top:18vh;right:-26vmax;animation-delay:-8s}
+.bgfx i:nth-child(3){background:#d3f2e8;bottom:-28vmax;left:-10vmax;animation-delay:-14s}
+.bgfx i:nth-child(4){background:#ffe4e1;bottom:8vh;right:-20vmax;width:40vmax;height:40vmax;animation-delay:-4s}
+@keyframes drift{to{transform:translate(6vmax,-5vmax) scale(1.08)}}
+.app{max-width:520px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 120px)}
+.glass{background:var(--glass);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);border:1px solid var(--line);border-radius:24px;box-shadow:var(--sh),inset 0 1px 0 rgba(255,255,255,.9)}
+.card{padding:18px;margin-top:14px;animation:up .6s cubic-bezier(.2,.8,.2,1) both}
+@keyframes up{from{opacity:0;transform:translateY(14px)}}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.brand{font-weight:800;font-size:15px;letter-spacing:-.01em}
+.mon{display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px}
+.mon span{font-weight:700;font-size:14px;min-width:118px;text-align:center}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+.ib{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;transition:transform .2s,background .2s}
+.ib:active{transform:scale(.9);background:rgba(255,255,255,.7)}
+.ib:disabled{opacity:.3}
+:focus-visible{outline:2px solid #7d8fe0;outline-offset:2px}
+h1{font-size:30px;line-height:1.1;letter-spacing:-.025em;margin:22px 2px 0;text-wrap:balance;font-weight:800}
+.lbl{font-size:13px;color:var(--mut);font-weight:600}
+.big{font-size:clamp(34px,10vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.1;white-space:nowrap}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.kpi{background:rgba(255,255,255,.55);border-radius:16px;padding:10px 12px}
+.kpi b{display:block;font-size:16px;white-space:nowrap}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.sec{display:flex;justify-content:space-between;align-items:baseline;margin:26px 4px 0}
+.sec h2{font-size:18px;margin:0;letter-spacing:-.01em}
+.accs{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:12px 4px 6px;margin:0 -4px;scrollbar-width:none}
+.accs::-webkit-scrollbar{display:none}
+.acc{flex:0 0 78%;scroll-snap-align:start;padding:16px;text-align:left;position:relative;overflow:hidden;transition:transform .25s cubic-bezier(.3,1.6,.5,1),box-shadow .25s}
+.acc:active{transform:scale(.97)}
+.acc::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,var(--c) 0%,transparent 70%);opacity:.16}
+.acc.on{box-shadow:0 0 0 2px var(--c),var(--sh)}
+.acc .dot{width:30px;height:30px;border-radius:10px;background:var(--c);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;position:relative}
+.acc .n{font-weight:700;margin-top:10px;position:relative}
+.acc .s{font-size:13px;color:var(--mut);position:relative}
+.acc .v{font-size:24px;font-weight:800;letter-spacing:-.02em;margin-top:6px;position:relative;white-space:nowrap}
+.acc svg{position:absolute;right:14px;top:16px;width:92px;height:32px}
+.hint{display:flex;gap:12px;align-items:flex-start;padding:14px;margin-top:10px;animation:up .5s both}
+.hint .ic{flex:none;width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:var(--hc);color:#fff}
+.hint p{margin:0;font-size:14px;line-height:1.4}
+.hint p b{display:block;font-size:15px}
+.hint .x{margin-left:auto;flex:none;font-size:13px;font-weight:700;color:var(--mut);padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.6);min-height:32px}
+.pills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.pill{background:rgba(255,255,255,.6);border-radius:14px;padding:8px 10px;font-size:13px;color:var(--mut)}
+.pill b{display:block;color:var(--ink);font-size:15px;white-space:nowrap}
+.range{position:relative;height:8px;border-radius:99px;background:linear-gradient(90deg,#f2d6d9,#dfe6f7,#cfeadf);margin:22px 4px 8px}
+.range i{position:absolute;top:50%;width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid var(--ink);transform:translate(-50%,-50%);transition:left .8s cubic-bezier(.2,.8,.2,1)}
+.rl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
+.bars{display:flex;gap:10px;align-items:flex-end;height:150px;margin-top:16px}
+.bm{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+.bp{flex:1;width:100%;display:flex;gap:3px;align-items:flex-end;justify-content:center}
+.bp i{width:42%;max-width:16px;border-radius:6px 6px 3px 3px;height:0;transition:height .9s cubic-bezier(.2,.8,.2,1)}
+.bm span{font-size:12px;color:var(--mut)}
+.bm.cur span{color:var(--ink);font-weight:800}
+.leg{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}
+.leg i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
+.donut{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:center;margin-top:10px}
+.donut svg{width:150px;height:150px;transform:rotate(-90deg)}
+.donut circle{fill:none;stroke-width:14;transition:stroke-dasharray 1s cubic-bezier(.2,.8,.2,1)}
+.dc{position:relative}.dc div{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.dc b{font-size:17px;white-space:nowrap}
+.cl{list-style:none;margin:0;padding:0;font-size:14px}
+.cl li{display:flex;align-items:center;gap:8px;padding:4px 0}
+.cl i{width:10px;height:10px;border-radius:4px;flex:none}
+.cl span:last-child{margin-left:auto;font-weight:700;white-space:nowrap}
+.row{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid rgba(31,36,51,.06)}
+.row:last-child{border:0}
+.row .ci{flex:none;width:38px;height:38px;border-radius:13px;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff}
+.row .t{flex:1}
+.row .t b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t small{font-size:12px;color:var(--mut)}
+.row .a{font-weight:700;white-space:nowrap;text-align:right}
+.row .a small{display:block;font-size:11px;font-weight:600;color:var(--mut)}
+.tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fbe3e5;color:var(--neg);margin-left:6px}
+.day{font-size:12px;font-weight:700;color:var(--mut);margin:14px 2px 2px}
+.chip{font-size:13px;font-weight:700;padding:6px 12px;border-radius:99px;background:rgba(255,255,255,.7)}
+nav{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 14px);transform:translateX(-50%);width:min(488px,calc(100% - 32px));display:flex;justify-content:space-around;align-items:center;padding:8px;border-radius:26px;z-index:5}
+nav button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:700;color:var(--mut);min-width:60px;min-height:44px;justify-content:center}
+nav button.on{color:var(--ink)}
+nav svg{width:22px;height:22px}
+.fab{width:56px;height:56px;border-radius:20px;background:linear-gradient(135deg,#8ea2ee,#b49be6);color:#fff;box-shadow:0 10px 24px rgba(130,120,220,.4);margin-top:-30px;transition:transform .25s cubic-bezier(.3,1.6,.5,1)}
+.fab:active{transform:scale(.88) rotate(90deg)}
+.sheet{position:fixed;inset:0;z-index:10;display:grid;align-items:end;background:rgba(40,45,70,.18);opacity:0;pointer-events:none;transition:opacity .3s}
+.sheet.open{opacity:1;pointer-events:auto}
+.sheet form{max-width:520px;width:100%;margin:0 auto;border-radius:28px 28px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom) + 20px);background:rgba(255,255,255,.82);transform:translateY(100%);transition:transform .45s cubic-bezier(.2,.9,.2,1)}
+.sheet.open form{transform:none}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:rgba(31,36,51,.06);border-radius:14px;padding:4px;margin:12px 0}
+.seg button{padding:10px;border-radius:11px;font-weight:700;color:var(--mut);min-height:44px}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.amt{width:100%;font:800 40px Manrope,sans-serif;text-align:center;border:0;background:none;color:var(--ink);padding:6px}
+.amt:focus{outline:none}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{font-size:12px;font-weight:700;color:var(--mut);display:block}
+input,select{width:100%;font:500 16px Manrope,sans-serif;color:var(--ink);background:rgba(255,255,255,.9);border:1px solid rgba(31,36,51,.1);border-radius:13px;padding:11px 12px;margin-top:4px;min-height:46px}
+.save{width:100%;margin-top:16px;min-height:52px;border-radius:16px;background:var(--ink);color:#fff;font-weight:800;font-size:16px}
+.toast{pointer-events:none;position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 96px);transform:translate(-50%,20px);padding:10px 16px;border-radius:14px;font-size:14px;font-weight:600;opacity:0;transition:.35s;z-index:20;white-space:nowrap}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.note{font-size:12px;color:var(--mut);text-align:center;margin-top:22px}
+.empty{color:var(--mut);font-size:14px;padding:10px 2px}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
+.row{cursor:pointer}
+.set{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 2px;border-bottom:1px solid rgba(31,36,51,.06)}
+.set:last-child{border:0}
+.set input{max-width:150px;text-align:right;margin:0}
+.set small{display:block;color:var(--mut);font-size:12px}
+.btn{min-height:44px;padding:0 16px;border-radius:14px;font-weight:700;background:rgba(255,255,255,.85);border:1px solid rgba(31,36,51,.08);white-space:nowrap}
+.btn.pri{background:var(--ink);color:#fff;border:0}
+.btn.dan{color:var(--neg)}
+.btn.dan.arm{background:var(--neg);color:#fff}
+.del{width:100%;margin-top:10px;min-height:48px;border-radius:16px;color:var(--neg);font-weight:700;background:rgba(194,95,105,.08)}
+.welcome p{margin:6px 0 14px;color:var(--mut);font-size:15px}
+.welcome .acts{display:flex;gap:10px;flex-wrap:wrap}
+.sheet form,.sheet .panel{max-height:92vh;overflow-y:auto}
+.sheet .panel{max-width:520px;width:100%;margin:0 auto;border-radius:28px 28px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom) + 20px);background:rgba(255,255,255,.86);transform:translateY(100%);transition:transform .45s cubic-bezier(.2,.9,.2,1)}
+.sheet.open .panel{transform:none}
+.h3{font-size:13px;font-weight:800;color:var(--mut);margin:18px 2px 4px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="bgfx" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<main class="app">
+  <header>
+    <div class="brand">Finanzen</div>
+    <div class="mon glass">
+      <button class="ib" id="prev" aria-label="Vorheriger Monat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <span id="mlabel"></span>
+      <button class="ib" id="next" aria-label="Nächster Monat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
+    </div>
+  </header>
+  <h1 id="headline"></h1>
+
+  <section class="glass card">
+    <div class="lbl">Saldo des Monats</div>
+    <div class="big" id="saldo">0 €</div>
+    <div class="kpis">
+      <div class="kpi"><span class="lbl">Einnahmen</span><b class="pos" id="kin"></b></div>
+      <div class="kpi"><span class="lbl">Ausgaben</span><b class="neg" id="kout"></b></div>
+      <div class="kpi"><span class="lbl">Sparquote</span><b id="krate"></b></div>
+    </div>
+  </section>
+
+  <div class="sec"><h2>Konten</h2><span class="lbl" id="total"></span></div>
+  <div class="accs" id="accs"></div>
+
+  <div id="hints"></div>
+
+  <section class="glass card">
+    <div class="lbl">Einkommen</div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span class="big" style="font-size:30px" id="inc"></span><span id="incd" style="font-weight:700;font-size:14px"></span></div>
+    <div class="pills" id="avgs"></div>
+    <div class="range"><i id="rmark"></i></div>
+    <div class="rl"><span id="rmin"></span><span id="rmax"></span></div>
+    <p style="font-size:14px;margin:12px 0 0;color:var(--mut)">Vorsichtiger Planungswert: <b style="color:var(--ink)" id="plan"></b> · der niedrigste Durchschnitt</p>
+  </section>
+
+  <section class="glass card">
+    <div class="lbl">Letzte 6 Monate</div>
+    <div class="bars" id="bars"></div>
+    <div class="leg"><span><i style="background:#9fd1b8"></i>Einnahmen</span><span><i style="background:#eab3b9"></i>Ausgaben</span></div>
+  </section>
+
+  <section class="glass card">
+    <div class="lbl">Ausgaben nach Kategorie</div>
+    <div class="donut"><div class="dc"><svg viewBox="0 0 120 120" id="dsvg"></svg><div><span class="lbl">Gesamt</span><b id="dtot"></b></div></div><ul class="cl" id="clist"></ul></div>
+  </section>
+
+  <div class="sec" id="fixsec"><h2>Fixkosten</h2><span class="lbl" id="fixsum"></span></div>
+  <section class="glass card" id="fix"></section>
+
+  <div class="sec" id="txsec"><h2>Buchungen</h2><button class="chip" id="chip" hidden></button></div>
+  <section class="glass card" id="txs"></section>
+  <p class="note">Deine Daten liegen nur auf diesem Gerät.</p>
+</main>
+
+<nav class="glass">
+  <button class="on" data-go="top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z"/></svg>Übersicht</button>
+  <button data-go="txsec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h9"/></svg>Buchungen</button>
+  <button class="fab" id="fab" aria-label="Buchung hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button data-go="fixsec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1016 0 8 8 0 00-16 0zM12 8v4l3 2"/></svg>Fixkosten</button>
+  <button data-go="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Mehr</button>
+</nav>
+
+<!-- Buchung anlegen / bearbeiten -->
+<div class="sheet" id="sheet">
+  <form class="glass" id="form" novalidate>
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:18px" id="ftitle">Neue Buchung</b><button type="button" class="ib" data-close aria-label="Schließen">✕</button></div>
+    <div class="seg" id="seg"><button type="button" class="on" data-t="out">Ausgabe</button><button type="button" data-t="in">Einnahme</button><button type="button" data-t="tr">Umbuchung</button></div>
+    <input class="amt" id="famt" inputmode="decimal" placeholder="0,00 €" aria-label="Betrag" autocomplete="off">
+    <div class="fg">
+      <div><label for="facc" id="lacc">Konto</label><select id="facc"></select></div>
+      <div id="wcat"><label for="fcat">Kategorie</label><select id="fcat"></select></div>
+      <div id="wto" hidden><label for="fto">Nach</label><select id="fto"></select></div>
+      <div><label for="fpay" id="lpay">Empfänger</label><input id="fpay" placeholder="z. B. REWE" autocomplete="off" list="payees"></div>
+      <div><label for="fdate">Datum</label><input id="fdate" type="date"></div>
+    </div>
+    <datalist id="payees"></datalist>
+    <button class="save">Speichern</button>
+    <button type="button" class="del" id="fdel" hidden>Buchung löschen</button>
+  </form>
+</div>
+
+<!-- Einstellungen -->
+<div class="sheet" id="more">
+  <div class="panel glass">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:18px">Mehr</b><button type="button" class="ib" data-close aria-label="Schließen">✕</button></div>
+    <div class="h3">Startsalden</div>
+    <p style="font-size:13px;color:var(--mut);margin:0 2px 4px">Kontostand vor deiner ersten Buchung in der App.</p>
+    <div id="starts"></div>
+    <div class="h3">Sicherung</div>
+    <div class="set"><div>Backup erstellen<small id="lastbk"></small></div><button class="btn pri" id="bexp">Sichern</button></div>
+    <div class="set"><div>Backup wiederherstellen<small>Ersetzt alle aktuellen Daten</small></div><label class="btn" style="display:grid;place-items:center;color:var(--ink);font-size:16px">Datei<input type="file" id="bimp" accept=".json,application/json" hidden></label></div>
+    <div class="set" id="impok" hidden><div id="impinfo"></div><button class="btn dan arm" id="impgo">Ersetzen</button></div>
+    <div class="set"><div>Speicherschutz<small id="persist"></small></div></div>
+    <div class="h3">Daten</div>
+    <div class="set"><div>Import aus CSV/PDF<small>Kommt in Phase 3</small></div></div>
+    <div class="set" id="demorow"><div>Beispieldaten laden<small>Zum Ausprobieren, nur bei leerer App</small></div><button class="btn" id="demo">Laden</button></div>
+    <div class="set"><div>Alle Daten löschen<small>Kann nicht rückgängig gemacht werden</small></div><button class="btn dan" id="wipe">Löschen</button></div>
+    <p class="note">Version 1.0 · Phase 2</p>
+  </div>
+</div>
+<div class="toast glass" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>
